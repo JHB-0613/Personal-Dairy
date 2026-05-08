@@ -87,6 +87,26 @@
     const db = getDatabase(app);
     const provider = new GoogleAuthProvider();
 
+    // [추가] 엔터키 감지 로직
+    const addEnterListener = (inputIds, action) => {
+        inputIds.forEach(id => {
+            document.getElementById(id).addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') action();
+            });
+        });
+    };
+
+    // 로그인 필드 엔터키 등록
+    addEnterListener(['login-id', 'login-pw'], () => signInWithId());
+    
+    // 회원가입 필드 엔터키 등록
+    addEnterListener(['signup-nickname', 'signup-id', 'signup-email', 'signup-pw', 'signup-pw-confirm'], () => signUpWithIdAndEmail());
+
+    // 메인 일기 작성 엔터키 등록 (선택 사항: 일기장에서도 엔터로 저장하고 싶다면)
+    // document.getElementById('content-input').addEventListener('keyup', (e) => {
+    //     if (e.key === 'Enter' && !e.shiftKey) saveDiary(); // Shift+Enter는 줄바꿈
+    // });
+
     window.toggleAuth = (showSignup) => {
         document.getElementById('login-form').classList.toggle('hidden', showSignup);
         document.getElementById('signup-form').classList.toggle('hidden', !showSignup);
@@ -154,7 +174,6 @@
 
     window.logout = () => signOut(auth);
 
-    // [수정] 일기 저장 로직 (이미지 관련 코드 제거)
     window.saveDiary = async () => {
         const date = document.getElementById('date-input').value;
         const content = document.getElementById('content-input').value;
@@ -182,7 +201,6 @@
         }
     };
 
-    // [수정] 일기 삭제 로직 (이미지 삭제 코드 제거)
     window.deleteDiary = async (diaryId) => {
         if (!confirm("정말 이 일기를 삭제할까요?")) return;
         try {
@@ -192,7 +210,6 @@
         }
     };
 
-    // [수정] 일기 불러오기 (이미지 표시 코드 제거)
     function loadDiaries(uid) {
         onValue(ref(db, `users/${uid}/diaries`), (snapshot) => {
             const data = snapshot.val();

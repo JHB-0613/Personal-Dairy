@@ -41,6 +41,7 @@
             <input type="text" id="signup-nickname" placeholder="사용할 닉네임">
             <input type="email" id="signup-email" placeholder="이메일 주소">
             <input type="password" id="signup-pw" placeholder="비밀번호 (6자리 이상)">
+            <input type="password" id="signup-pw-confirm" placeholder="비밀번호 확인">
             <button class="secondary-btn" onclick="signUpEmail()">가입하기</button>
             <div class="switch-link" onclick="toggleAuth(false)">이미 계정이 있나요? 로그인</div>
         </div>
@@ -91,7 +92,6 @@
 
     let currentUser = null;
 
-    // 화면 전환 함수
     window.toggleAuth = (showSignup) => {
         document.getElementById('login-form').classList.toggle('hidden', showSignup);
         document.getElementById('signup-form').classList.toggle('hidden', !showSignup);
@@ -122,13 +122,21 @@
         }
     }
 
+    // 회원가입 로직 (비밀번호 확인 추가)
     window.signUpEmail = () => {
         const nickname = document.getElementById('signup-nickname').value;
         const email = document.getElementById('signup-email').value;
         const password = document.getElementById('signup-pw').value;
+        const passwordConfirm = document.getElementById('signup-pw-confirm').value; // 확인 값
         const errorElement = document.getElementById('auth-error');
 
         if (!nickname) { errorElement.innerText = "닉네임을 입력해 주세요."; return; }
+        
+        // 비밀번호 일치 여부 검사
+        if (password !== passwordConfirm) {
+            errorElement.innerText = "비밀번호가 일치하지 않습니다. 다시 확인해 주세요.";
+            return;
+        }
 
         createUserWithEmailAndPassword(auth, email, password)
             .then((userCredential) => {
@@ -149,7 +157,6 @@
     window.login = () => signInWithPopup(auth, provider);
     window.logout = () => signOut(auth);
 
-    // 일기 저장 (사진 포함)
     window.saveDiary = async () => {
         const date = document.getElementById('date-input').value;
         const content = document.getElementById('content-input').value;
@@ -174,7 +181,6 @@
 
             document.getElementById('content-input').value = '';
             document.getElementById('image-input').value = '';
-            alert("저장되었습니다!");
         } catch (e) {
             alert("저장 실패: " + e.message);
         } finally {

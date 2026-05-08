@@ -30,19 +30,21 @@
     <div id="auth-section">
         <div id="login-form">
             <h3 style="text-align: center;">로그인</h3>
-            <input type="email" id="login-email" placeholder="이메일 주소">
+            <input type="text" id="login-id" placeholder="아이디">
             <input type="password" id="login-pw" placeholder="비밀번호">
-            <button onclick="signInEmail()">로그인</button>
+            <button onclick="signInWithId()">로그인</button>
+            <div class="switch-link" style="margin-bottom: 5px;" onclick="sendResetEmail()">비밀번호를 잊으셨나요?</div>
             <div class="switch-link" onclick="toggleAuth(true)">계정이 없으신가요? 회원가입</div>
         </div>
 
         <div id="signup-form" class="hidden">
             <h3 style="text-align: center;">회원가입</h3>
             <input type="text" id="signup-nickname" placeholder="사용할 닉네임">
-            <input type="email" id="signup-email" placeholder="이메일 주소">
+            <input type="text" id="signup-id" placeholder="사용할 아이디">
+            <input type="email" id="signup-email" placeholder="실제 이메일 (비밀번호 재설정용)">
             <input type="password" id="signup-pw" placeholder="비밀번호 (6자리 이상)">
             <input type="password" id="signup-pw-confirm" placeholder="비밀번호 확인">
-            <button class="secondary-btn" onclick="signUpEmail()">가입하기</button>
+            <button class="secondary-btn" onclick="signUpWithIdAndEmail()">가입하기</button>
             <div class="switch-link" onclick="toggleAuth(false)">이미 계정이 있나요? 로그인</div>
         </div>
 
@@ -70,8 +72,8 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-    import { getDatabase, ref, push, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getDatabase, ref, push, onValue, get, child, set } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
     import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
     const firebaseConfig = {
@@ -90,8 +92,6 @@
     const storage = getStorage(app);
     const provider = new GoogleAuthProvider();
 
-    let currentUser = null;
-
     window.toggleAuth = (showSignup) => {
         document.getElementById('login-form').classList.toggle('hidden', showSignup);
         document.getElementById('signup-form').classList.toggle('hidden', !showSignup);
@@ -100,98 +100,117 @@
 
     onAuthStateChanged(auth, (user) => {
         if (user) {
-            currentUser = user;
             document.getElementById('auth-section').classList.add('hidden');
             document.getElementById('main-section').classList.remove('hidden');
-            document.getElementById('user-name').innerText = user.displayName || user.email;
+            document.getElementById('user-name').innerText = user.displayName || "사용자";
             loadDiaries(user.uid);
         } else {
-            currentUser = null;
             document.getElementById('auth-section').classList.remove('hidden');
             document.getElementById('main-section').classList.add('hidden');
         }
     });
 
-    function getFriendlyErrorMessage(errorCode) {
-        switch (errorCode) {
-            case 'auth/email-already-in-use': return '이미 가입된 이메일 주소입니다.';
-            case 'auth/weak-password': return '비밀번호를 6자리 이상으로 설정해 주세요.';
-            case 'auth/invalid-credential': return '이메일 또는 비밀번호가 일치하지 않습니다.';
-            case 'auth/invalid-email': return '유효하지 않은 이메일 형식입니다.';
-            default: return '오류가 발생했습니다. 다시 시도해 주세요.';
-        }
-    }
-
-    // 회원가입 로직 (비밀번호 확인 추가)
-    window.signUpEmail = () => {
+    // 회원가입: 아이디-이메일 매핑 정보를 DB에 저장
+    window.signUpWithIdAndEmail = async () => {
         const nickname = document.getElementById('signup-nickname').value;
+        const id = document.getElementById('signup-id').value;
         const email = document.getElementById('signup-email').value;
         const password = document.getElementById('signup-pw').value;
-        const passwordConfirm = document.getElementById('signup-pw-confirm').value; // 확인 값
+        const passwordConfirm = document.getElementById('signup-pw-confirm').value;
         const errorElement = document.getElementById('auth-error');
 
-        if (!nickname) { errorElement.innerText = "닉네임을 입력해 주세요."; return; }
-        
-        // 비밀번호 일치 여부 검사
-        if (password !== passwordConfirm) {
-            errorElement.innerText = "비밀번호가 일치하지 않습니다. 다시 확인해 주세요.";
-            return;
-        }
+        if (!nickname || !id || !email) { errorElement.innerText = "모든 정보를 입력해 주세요."; return; }
+        if (password !== passwordConfirm) { errorElement.innerText = "비밀번호가 일치하지 않습니다."; return; }
 
-        createUserWithEmailAndPassword(auth, email, password)
-            .then((userCredential) => {
-                updateProfile(userCredential.user, { displayName: nickname }).then(() => location.reload());
-            })
-            .catch((error) => errorElement.innerText = getFriendlyErrorMessage(error.code));
+        try {
+            // 1. 아이디 중복 체크
+            const idCheck = await get(child(ref(db), `idMap/${id}`));
+            if (idCheck.exists()) {
+                errorElement.innerText = "이미 사용 중인 아이디입니다.";
+                return;
+            }
+
+            // 2. 가입 진행
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+
+            // 3. 닉네임 업데이트 및 DB에 아이디 매핑 저장
+            await updateProfile(user, { displayName: nickname });
+            await set(ref(db, `idMap/${id}`), { email: email });
+            
+            alert("회원가입 성공!");
+            location.reload();
+        } catch (error) {
+            errorElement.innerText = "가입 실패: " + error.message;
+        }
     };
 
-    window.signInEmail = () => {
-        const email = document.getElementById('login-email').value;
+    // 로그인: 입력한 아이디로 이메일을 찾아와서 로그인 진행
+    window.signInWithId = async () => {
+        const id = document.getElementById('login-id').value;
         const password = document.getElementById('login-pw').value;
         const errorElement = document.getElementById('auth-error');
 
-        signInWithEmailAndPassword(auth, email, password)
-            .catch((error) => errorElement.innerText = getFriendlyErrorMessage(error.code));
+        if (!id || !password) { errorElement.innerText = "아이디와 비밀번호를 입력해 주세요."; return; }
+
+        try {
+            const snapshot = await get(child(ref(db), `idMap/${id}`));
+            if (!snapshot.exists()) {
+                errorElement.innerText = "존재하지 않는 아이디입니다.";
+                return;
+            }
+            const actualEmail = snapshot.val().email;
+            await signInWithEmailAndPassword(auth, actualEmail, password);
+        } catch (error) {
+            errorElement.innerText = "로그인 실패: 아이디 또는 비밀번호를 확인하세요.";
+        }
+    };
+
+    // 비밀번호 재설정 메일 보내기
+    window.sendResetEmail = async () => {
+        const id = document.getElementById('login-id').value;
+        if (!id) { alert("비밀번호를 찾으려는 아이디를 먼저 입력해 주세요."); return; }
+
+        try {
+            const snapshot = await get(child(ref(db), `idMap/${id}`));
+            if (!snapshot.exists()) { alert("등록되지 않은 아이디입니다."); return; }
+
+            const actualEmail = snapshot.val().email;
+            await sendPasswordResetEmail(auth, actualEmail);
+            alert(`${actualEmail}로 재설정 메일을 보냈습니다!`);
+        } catch (error) {
+            alert("메일 전송 실패: " + error.message);
+        }
     };
 
     window.login = () => signInWithPopup(auth, provider);
     window.logout = () => signOut(auth);
 
+    // 일기 저장 및 불러오기 로직은 이전과 동일하게 유지
     window.saveDiary = async () => {
         const date = document.getElementById('date-input').value;
         const content = document.getElementById('content-input').value;
         const file = document.getElementById('image-input').files[0];
         const saveBtn = document.getElementById('save-btn');
-
-        if (!content || !currentUser) return;
-        
+        const user = auth.currentUser;
+        if (!content || !user) return;
         saveBtn.disabled = true;
         saveBtn.innerText = "저장 중...";
-
-        let imageUrl = "";
         try {
+            let imageUrl = "";
             if (file) {
-                const fileRef = sRef(storage, `users/${currentUser.uid}/${Date.now()}_${file.name}`);
+                const fileRef = sRef(storage, `users/${user.uid}/${Date.now()}_${file.name}`);
                 await uploadBytes(fileRef, file);
                 imageUrl = await getDownloadURL(fileRef);
             }
-
-            const userDiaryRef = ref(db, `users/${currentUser.uid}/diaries`);
-            await push(userDiaryRef, { date, content, imageUrl, timestamp: Date.now() });
-
+            await push(ref(db, `users/${user.uid}/diaries`), { date, content, imageUrl, timestamp: Date.now() });
             document.getElementById('content-input').value = '';
             document.getElementById('image-input').value = '';
-        } catch (e) {
-            alert("저장 실패: " + e.message);
-        } finally {
-            saveBtn.disabled = false;
-            saveBtn.innerText = "기록하기";
-        }
+        } catch (e) { alert("저장 실패"); } finally { saveBtn.disabled = false; saveBtn.innerText = "기록하기"; }
     };
 
     function loadDiaries(uid) {
-        const userDiaryRef = ref(db, `users/${uid}/diaries`);
-        onValue(userDiaryRef, (snapshot) => {
+        onValue(ref(db, `users/${uid}/diaries`), (snapshot) => {
             const data = snapshot.val();
             const listContainer = document.getElementById('diary-list');
             listContainer.innerHTML = '';
@@ -206,7 +225,6 @@
             }
         });
     }
-
     document.getElementById('date-input').valueAsDate = new Date();
 </script>
 </body>

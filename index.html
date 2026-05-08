@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나만의 클라우드 일기장</title>
+    <style>
+        :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; }
+        body { font-family: 'Pretendard', sans-serif; background-color: var(--bg-color); display: flex; justify-content: center; padding: 20px; }
+        .container { width: 100%; max-width: 600px; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .hidden { display: none; }
+        .user-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px; background: #eee; border-radius: 8px; }
+        input, textarea, button { width: 100%; padding: 12px; margin-top: 8px; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; }
+        button { background-color: var(--primary-color); color: white; border: none; cursor: pointer; font-weight: bold; }
+        .logout-btn { background-color: #e74c3c; width: auto; padding: 5px 10px; font-size: 12px; }
+        .diary-item { border: 1px solid #eee; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .diary-date { font-weight: bold; color: var(--primary-color); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🔒 비밀 일기장</h1>
+
+    <!-- 1. 로그인 화면 -->
+    <div id="auth-section">
+        <p style="text-align: center;">일기를 쓰려면 로그인이 필요합니다.</p>
+        <button onclick="login()">구글로 로그인하기</button>
+    </div>
+
+    <!-- 2. 일기 작성 및 목록 화면 (로그인 전엔 숨김) -->
+    <div id="main-section" class="hidden">
+        <div class="user-info">
+            <span id="user-name"></span>님 환영합니다!
+            <button class="logout-btn" onclick="logout()">로그아웃</button>
+        </div>
+
+        <input type="date" id="date-input">
+        <textarea id="content-input" placeholder="오늘의 생각을 기록하세요."></textarea>
+        <button onclick="saveDiary()">기록하기</button>
+
+        <hr style="margin: 30px 0; border: 0.5px solid #eee;">
+        <div id="diary-list"></div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getDatabase, ref, push, onValue, query, orderByChild } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = {
+    apiKey: "AIzaSyCTChi4-r43pV9MkgXat6WJjyWqJaElMIM",
+    authDomain: "personal-dairy-ec00f.firebaseapp.com",
+    databaseURL: "https://personal-dairy-ec00f-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "personal-dairy-ec00f",
+    storageBucket: "personal-dairy-ec00f.firebasestorage.app",
+    messagingSenderId: "261757215946",
+    appId: "1:261757215946:web:d1af5573d78b2470450033"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+    const provider = new GoogleAuthProvider();
+
+    let currentUser = null;
+
+    // [인증 상태 감시] 로그인 상태가 변하면 실행됨
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            currentUser = user;
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('main-section').classList.remove('hidden');
+            document.getElementById('user-name').innerText = user.displayName;
+            loadDiaries(user.uid); // 로그인한 사용자의 UID로 일기 로드
+        } else {
+            currentUser = null;
+            document.getElementById('auth-section').classList.remove('hidden');
+            document.getElementById('main-section').classList.add('hidden');
+        }
+    });
+
+    // 로그인 함수
+    window.login = () => signInWithPopup(auth, provider).catch(console.error);
+
+    // 로그아웃 함수
+    window.logout = () => signOut(auth);
+
+    // 저장 함수
+    window.saveDiary = () => {
+        const date = document.getElementById('date-input').value;
+        const content = document.getElementById('content-input').value;
+        if (!content || !currentUser) return;
+
+        // 경로를 users/사용자UID/diaries 로 설정하여 개인 공간 확보
+        const userDiaryRef = ref(db, `users/${currentUser.uid}/diaries`);
+        push(userDiaryRef, { date, content, timestamp: Date.now() })
+            .then(() => document.getElementById('content-input').value = '');
+    };
+
+    // 불러오기 함수
+    function loadDiaries(uid) {
+        const userDiaryRef = ref(db, `users/${uid}/diaries`);
+        onValue(userDiaryRef, (snapshot) => {
+            const data = snapshot.val();
+            const listContainer = document.getElementById('diary-list');
+            listContainer.innerHTML = '';
+            if (data) {
+                const entries = Object.values(data).sort((a, b) => new Date(b.date) - new Date(a.date));
+                entries.forEach(entry => {
+                    const item = document.createElement('div');
+                    item.className = 'diary-item';
+                    item.innerHTML = `<div class="diary-date">${entry.date}</div><div>${entry.content}</div>`;
+                    listContainer.appendChild(item);
+                });
+            }
+        });
+    }
+
+    document.getElementById('date-input').valueAsDate = new Date();
+</script>
+</body>
+</html>

@@ -18,10 +18,12 @@
         .folder-count { position: absolute; top: 5px; left: 10px; font-size: 11px; opacity: 0.7; }
 
         input, textarea, button, select { width: 100%; padding: 12px; margin-top: 8px; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; }
-        button { background-color: var(--primary-color); color: white; border: none; cursor: pointer; font-weight: bold; }
+        button { background-color: var(--primary-color); color: white; border: none; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        button:hover { opacity: 0.9; }
+        .google-btn { background-color: #df4a32; margin-top: 15px; }
         
         /* 일기 아이템 스타일 */
-        .diary-item { border-bottom: 1px solid #eee; padding: 15px 0; cursor: pointer; transition: background 0.2s; }
+        .diary-item { border-bottom: 1px solid #eee; padding: 15px 0; cursor: pointer; }
         .diary-item:hover { background: #fafafa; }
         .diary-header { display: flex; justify-content: space-between; align-items: center; }
         .diary-badge { background: #eee; padding: 2px 8px; border-radius: 10px; font-size: 11px; color: #666; }
@@ -46,25 +48,32 @@
 
     <div id="auth-section">
         <div id="login-form">
+            <h3 style="text-align: center;">로그인</h3>
             <input type="text" id="login-id" placeholder="아이디">
             <input type="password" id="login-pw" placeholder="비밀번호">
             <button onclick="signInWithId()">로그인</button>
-            <div style="text-align:center; margin-top:15px; font-size:14px; color:#666; cursor:pointer;" onclick="toggleAuth(true)">회원가입 하기</div>
+            <div style="text-align:center; margin-top:15px; font-size:14px; color:#666; cursor:pointer;" onclick="toggleAuth(true)">계정이 없으신가요? 회원가입</div>
         </div>
+
         <div id="signup-form" class="hidden">
+            <h3 style="text-align: center;">회원가입</h3>
             <input type="text" id="signup-nickname" placeholder="닉네임">
-            <input type="text" id="signup-id" placeholder="아이디">
-            <input type="email" id="signup-email" placeholder="이메일">
-            <input type="password" id="signup-pw" placeholder="비밀번호">
-            <button onclick="signUpWithIdAndEmail()">가입하기</button>
-            <div style="text-align:center; margin-top:15px; font-size:14px; color:#666; cursor:pointer;" onclick="toggleAuth(false)">로그인 화면으로</div>
+            <input type="text" id="signup-id" placeholder="사용할 아이디">
+            <input type="email" id="signup-email" placeholder="이메일 (비밀번호 찾기용)">
+            <input type="password" id="signup-pw" placeholder="비밀번호 (6자리 이상)">
+            <input type="password" id="signup-pw-confirm" placeholder="비밀번호 확인">
+            <button style="background-color: #2ecc71;" onclick="signUpWithIdAndEmail()">가입하기</button>
+            <div style="text-align:center; margin-top:15px; font-size:14px; color:#666; cursor:pointer;" onclick="toggleAuth(false)">이미 계정이 있나요? 로그인</div>
         </div>
+        
         <p id="auth-error"></p>
+        <div style="text-align: center; margin: 15px 0; color: #888;">또는</div>
+        <button class="google-btn" onclick="loginWithGoogle()">구글로 계속하기</button>
     </div>
 
     <div id="main-section" class="hidden">
         <div class="user-info">
-            <span id="user-name"></span>님
+            <span id="user-name"></span>님 환영합니다!
             <button class="logout-btn" onclick="logout()">로그아웃</button>
         </div>
 
@@ -82,17 +91,17 @@
         </select>
         <input type="date" id="date-input">
         <textarea id="content-input" placeholder="내용을 입력하세요..."></textarea>
-        <button id="save-btn" onclick="saveDiary()">저장하기</button>
+        <button id="save-btn" onclick="saveDiary()">기록하기</button>
 
-        <hr>
+        <hr style="margin: 30px 0; border: 0.5px solid #eee;">
         <div id="diary-list"></div>
     </div>
 </div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getAuth, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-    import { getDatabase, ref, push, onValue, get, child, set, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getDatabase, ref, push, onValue, get, child, set, remove, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCTChi4-r43pV9MkgXat6WJjyWqJaElMIM",
@@ -107,12 +116,13 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getDatabase(app);
+    const provider = new GoogleAuthProvider();
 
     let allDiaries = {};
     let currentFilter = "전체";
     const categories = ["과제", "정리", "메모", "그림", "봉인", "꺼진 화면 메모"];
 
-    // 자동 높이 조절
+    // 텍스트 영역 높이 자동 조절
     const contentInput = document.getElementById('content-input');
     contentInput.addEventListener('input', () => {
         contentInput.style.height = 'auto';
@@ -120,14 +130,16 @@
     });
 
     onAuthStateChanged(auth, (user) => {
+        const authSection = document.getElementById('auth-section');
+        const mainSection = document.getElementById('main-section');
         if (user) {
-            document.getElementById('auth-section').classList.add('hidden');
-            document.getElementById('main-section').classList.remove('hidden');
-            document.getElementById('user-name').innerText = user.displayName;
+            authSection.classList.add('hidden');
+            mainSection.classList.remove('hidden');
+            document.getElementById('user-name').innerText = user.displayName || user.email;
             loadDiaries(user.uid);
         } else {
-            document.getElementById('auth-section').classList.remove('hidden');
-            document.getElementById('main-section').classList.add('hidden');
+            authSection.classList.remove('hidden');
+            mainSection.classList.add('hidden');
         }
     });
 
@@ -135,7 +147,7 @@
         const cat = document.getElementById('category-select').value;
         const date = document.getElementById('date-input').value;
         const content = contentInput.value;
-        if(!content) return;
+        if(!content || !auth.currentUser) return;
 
         await push(ref(db, `users/${auth.currentUser.uid}/diaries`), {
             category: cat,
@@ -199,7 +211,7 @@
                 <div class="diary-preview">${d.content}</div>
                 <div class="diary-full">
                     ${d.content}
-                    <div style="margin-top:15px; text-align:right;">
+                    <div style="margin-top:15px; text-align:right; display:flex; gap:5px; justify-content: flex-end;">
                         <button onclick="deleteDiary('${id}')" style="background:#ff7675; width:auto; padding:5px 10px; font-size:12px;">삭제</button>
                     </div>
                 </div>
@@ -210,34 +222,57 @@
 
     window.deleteDiary = async (id) => {
         event.stopPropagation();
-        if(confirm("삭제할까요?")) {
+        if(confirm("정말 삭제할까요?")) {
             await remove(ref(db, `users/${auth.currentUser.uid}/diaries/${id}`));
         }
     };
 
-    // 인증/로그인 관련 함수들 (동일하게 유지)
-    window.toggleAuth = (s) => { document.getElementById('login-form').classList.toggle('hidden', s); document.getElementById('signup-form').classList.toggle('hidden', !s); };
+    // 인증 관련 함수
+    window.toggleAuth = (s) => { 
+        document.getElementById('login-form').classList.toggle('hidden', s); 
+        document.getElementById('signup-form').classList.toggle('hidden', !s); 
+        document.getElementById('auth-error').innerText = "";
+    };
+
+    window.loginWithGoogle = () => signInWithPopup(auth, provider);
+    window.logout = () => signOut(auth);
+
     window.signInWithId = async () => {
         const id = document.getElementById('login-id').value;
         const pw = document.getElementById('login-pw').value;
-        const snap = await get(child(ref(db), `idMap/${id}`));
-        if(snap.exists()) await signInWithEmailAndPassword(auth, snap.val().email, pw);
+        const errorElement = document.getElementById('auth-error');
+        try {
+            const snap = await get(child(ref(db), `idMap/${id}`));
+            if(!snap.exists()) { errorElement.innerText = "존재하지 않는 아이디입니다."; return; }
+            await signInWithEmailAndPassword(auth, snap.val().email, pw);
+        } catch (error) { errorElement.innerText = "아이디 또는 비밀번호가 틀렸습니다."; }
     };
+
     window.signUpWithIdAndEmail = async () => {
         const nick = document.getElementById('signup-nickname').value;
         const id = document.getElementById('signup-id').value;
         const email = document.getElementById('signup-email').value;
         const pw = document.getElementById('signup-pw').value;
-        const userCred = await createUserWithEmailAndPassword(auth, email, pw);
-        await updateProfile(userCred.user, { displayName: nick });
-        await set(ref(db, `idMap/${id}`), { email: email });
-        location.reload();
-    };
-    window.logout = () => signOut(auth);
+        const pwConfirm = document.getElementById('signup-pw-confirm').value;
+        const errorElement = document.getElementById('auth-error');
 
-    // 날짜 초기화
+        if(!nick || !id || !email || !pw) { errorElement.innerText = "모든 정보를 입력해 주세요."; return; }
+        if(pw !== pwConfirm) { errorElement.innerText = "비밀번호가 일치하지 않습니다."; return; }
+
+        try {
+            const idCheck = await get(child(ref(db), `idMap/${id}`));
+            if(idCheck.exists()) { errorElement.innerText = "이미 사용 중인 아이디입니다."; return; }
+            const userCred = await createUserWithEmailAndPassword(auth, email, pw);
+            await updateProfile(userCred.user, { displayName: nick });
+            await set(ref(db, `idMap/${id}`), { email: email });
+            location.reload();
+        } catch (error) { errorElement.innerText = error.message; }
+    };
+
+    // 오늘 날짜 설정
+    const dateInput = document.getElementById('date-input');
     const now = new Date();
-    document.getElementById('date-input').value = now.toISOString().substring(0, 10);
+    dateInput.value = now.toISOString().substring(0, 10);
 </script>
 </body>
 </html>

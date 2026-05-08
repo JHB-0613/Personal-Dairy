@@ -12,7 +12,6 @@
         .user-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px; background: #eee; border-radius: 8px; }
         input, textarea, button { width: 100%; padding: 12px; margin-top: 8px; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; }
         button { background-color: var(--primary-color); color: white; border: none; cursor: pointer; font-weight: bold; }
-        .secondary-btn { background-color: #2ecc71; }
         .google-btn { background-color: #df4a32; margin-top: 15px; }
         .logout-btn { background-color: #e74c3c; width: auto; padding: 5px 10px; font-size: 12px; }
         .delete-btn { background-color: #ff7675; width: auto; padding: 4px 8px; font-size: 11px; float: right; margin-top: 0; }
@@ -20,8 +19,7 @@
         .diary-item { border: 1px solid #eee; padding: 15px; border-radius: 8px; margin-bottom: 15px; position: relative; overflow: hidden; }
         .diary-date { font-weight: bold; color: var(--primary-color); margin-bottom: 4px; }
         .diary-time { font-size: 12px; color: #999; margin-bottom: 8px; }
-        .diary-img { width: 100%; border-radius: 8px; margin: 10px 0; }
-        .diary-content { white-space: pre-wrap; line-height: 1.6; clear: both; }
+        .diary-content { white-space: pre-wrap; line-height: 1.6; clear: both; margin-top: 10px; }
         #auth-error { color: #e74c3c; font-size: 13px; margin-top: 10px; text-align: center; min-height: 18px; }
     </style>
 </head>
@@ -47,7 +45,7 @@
             <input type="email" id="signup-email" placeholder="실제 이메일 (비밀번호 재설정용)">
             <input type="password" id="signup-pw" placeholder="비밀번호 (6자리 이상)">
             <input type="password" id="signup-pw-confirm" placeholder="비밀번호 확인">
-            <button class="secondary-btn" onclick="signUpWithIdAndEmail()">가입하기</button>
+            <button class="secondary-btn" style="background-color: #2ecc71;" onclick="signUpWithIdAndEmail()">가입하기</button>
             <div class="switch-link" onclick="toggleAuth(false)">이미 계정이 있나요? 로그인</div>
         </div>
 
@@ -62,8 +60,6 @@
             <button class="logout-btn" onclick="logout()">로그아웃</button>
         </div>
         <input type="date" id="date-input">
-        <div style="margin-top: 10px; font-size: 14px;">📷 사진 추가 (동영상 불가):</div>
-        <input type="file" id="image-input" accept="image/*">
         <textarea id="content-input" placeholder="오늘의 생각을 기록하세요."></textarea>
         <button id="save-btn" onclick="saveDiary()">기록하기</button>
         <hr style="margin: 30px 0; border: 0.5px solid #eee;">
@@ -75,7 +71,6 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import { getDatabase, ref, push, onValue, get, child, set, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-    import { getStorage, ref as sRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCTChi4-r43pV9MkgXat6WJjyWqJaElMIM",
@@ -90,17 +85,7 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getDatabase(app);
-    const storage = getStorage(app);
     const provider = new GoogleAuthProvider();
-
-    // 동영상 차단 로직
-    document.getElementById('image-input').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (file && file.type.startsWith('video/')) {
-            alert("동영상 파일은 업로드할 수 없습니다. 이미지만 선택해 주세요!");
-            e.target.value = "";
-        }
-    });
 
     window.toggleAuth = (showSignup) => {
         document.getElementById('login-form').classList.toggle('hidden', showSignup);
@@ -120,10 +105,8 @@
         }
     });
 
-    // 구글 로그인 함수
     window.loginWithGoogle = () => signInWithPopup(auth, provider).catch(e => alert(e.message));
 
-    // 아이디 회원가입
     window.signUpWithIdAndEmail = async () => {
         const nickname = document.getElementById('signup-nickname').value;
         const id = document.getElementById('signup-id').value;
@@ -146,7 +129,6 @@
         } catch (error) { errorElement.innerText = error.message; }
     };
 
-    // 아이디 로그인
     window.signInWithId = async () => {
         const id = document.getElementById('login-id').value;
         const password = document.getElementById('login-pw').value;
@@ -159,7 +141,6 @@
         } catch (error) { errorElement.innerText = "아이디 또는 비밀번호가 틀렸습니다."; }
     };
 
-    // 비밀번호 재설정
     window.sendResetEmail = async () => {
         const id = prompt("비밀번호를 재설정할 아이디를 입력해 주세요.");
         if (!id) return;
@@ -173,11 +154,10 @@
 
     window.logout = () => signOut(auth);
 
-    // 일기 저장
+    // [수정] 일기 저장 로직 (이미지 관련 코드 제거)
     window.saveDiary = async () => {
         const date = document.getElementById('date-input').value;
         const content = document.getElementById('content-input').value;
-        const file = document.getElementById('image-input').files[0];
         const saveBtn = document.getElementById('save-btn');
         const user = auth.currentUser;
 
@@ -186,41 +166,33 @@
         saveBtn.innerText = "저장 중...";
 
         try {
-            let imageUrl = "";
-            let imagePath = "";
-            if (file) {
-                imagePath = `users/${user.uid}/${Date.now()}_${file.name}`;
-                const fileRef = sRef(storage, imagePath);
-                await uploadBytes(fileRef, file);
-                imageUrl = await getDownloadURL(fileRef);
-            }
-
             const now = new Date();
             await push(ref(db, `users/${user.uid}/diaries`), {
                 date,
                 content,
-                imageUrl,
-                imagePath,
                 time: now.toLocaleTimeString('ko-KR'),
                 timestamp: Date.now()
             });
             document.getElementById('content-input').value = '';
-            document.getElementById('image-input').value = '';
-        } catch (e) { alert("저장 실패"); } finally {
+        } catch (e) { 
+            alert("저장 실패"); 
+        } finally {
             saveBtn.disabled = false;
             saveBtn.innerText = "기록하기";
         }
     };
 
-    // 일기 삭제
-    window.deleteDiary = async (diaryId, imagePath) => {
+    // [수정] 일기 삭제 로직 (이미지 삭제 코드 제거)
+    window.deleteDiary = async (diaryId) => {
         if (!confirm("정말 이 일기를 삭제할까요?")) return;
         try {
-            if (imagePath) await deleteObject(sRef(storage, imagePath));
             await remove(ref(db, `users/${auth.currentUser.uid}/diaries/${diaryId}`));
-        } catch (e) { alert("삭제 실패"); }
+        } catch (e) { 
+            alert("삭제 실패"); 
+        }
     };
 
+    // [수정] 일기 불러오기 (이미지 표시 코드 제거)
     function loadDiaries(uid) {
         onValue(ref(db, `users/${uid}/diaries`), (snapshot) => {
             const data = snapshot.val();
@@ -230,12 +202,10 @@
                 Object.entries(data).sort((a, b) => b[1].timestamp - a[1].timestamp).forEach(([id, entry]) => {
                     const item = document.createElement('div');
                     item.className = 'diary-item';
-                    const imgHtml = entry.imageUrl ? `<img src="${entry.imageUrl}" class="diary-img">` : '';
                     item.innerHTML = `
-                        <button class="delete-btn" onclick="deleteDiary('${id}', '${entry.imagePath || ''}')">삭제</button>
+                        <button class="delete-btn" onclick="deleteDiary('${id}')">삭제</button>
                         <div class="diary-date">${entry.date}</div>
                         <div class="diary-time">🕒 작성 시간: ${entry.time || ''}</div>
-                        ${imgHtml}
                         <div class="diary-content">${entry.content}</div>
                     `;
                     list.appendChild(item);

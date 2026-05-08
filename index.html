@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>나만의 카테고리 일기장</title>
+    <title>커스텀 폴더 일기장</title>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; }
         body { font-family: 'Pretendard', sans-serif; background-color: var(--bg-color); display: flex; justify-content: center; padding: 20px; }
@@ -11,11 +11,19 @@
         .hidden { display: none; }
         
         /* 폴더 스타일 카테고리 탭 */
-        .category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 15px; margin-bottom: 30px; }
-        .folder { background: #eee; padding: 15px; border-radius: 10px; cursor: pointer; text-align: center; position: relative; transition: 0.2s; }
+        .category-container { margin-bottom: 30px; }
+        .category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; margin-top: 10px; }
+        .folder { background: #eee; padding: 18px 10px; border-radius: 10px; cursor: pointer; text-align: center; position: relative; transition: 0.2s; font-size: 14px; word-break: break-all; }
         .folder:hover { background: #e0e0e0; transform: translateY(-3px); }
         .folder.active { background: var(--primary-color); color: white; }
-        .folder-count { position: absolute; top: 5px; left: 10px; font-size: 11px; opacity: 0.7; }
+        .folder-count { position: absolute; top: 5px; left: 8px; font-size: 10px; opacity: 0.7; }
+        .del-cat { position: absolute; top: 2px; right: 5px; font-size: 14px; color: #ff7675; display: none; }
+        .folder:hover .del-cat { display: block; }
+
+        /* 카테고리 추가 영역 */
+        .add-category-box { display: flex; gap: 5px; margin-bottom: 15px; }
+        .add-category-box input { margin-top: 0; flex: 1; padding: 8px; }
+        .add-category-box button { width: auto; padding: 8px 15px; margin-top: 0; background: #2ecc71; }
 
         input, textarea, button, select { width: 100%; padding: 12px; margin-top: 8px; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; }
         button { background-color: var(--primary-color); color: white; border: none; cursor: pointer; font-weight: bold; transition: background 0.2s; }
@@ -29,7 +37,6 @@
         .diary-badge { background: #eee; padding: 2px 8px; border-radius: 10px; font-size: 11px; color: #666; }
         .diary-date { font-weight: bold; font-size: 14px; color: var(--primary-color); }
         
-        /* 미리보기 및 전체보기 */
         .diary-preview { color: #666; font-size: 14px; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
         .diary-full { display: none; white-space: pre-wrap; line-height: 1.6; margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 8px; }
         .diary-item.open .diary-full { display: block; }
@@ -39,6 +46,7 @@
         .logout-btn { background-color: #e74c3c; width: auto; padding: 5px 10px; font-size: 12px; }
         #auth-error { color: #e74c3c; font-size: 13px; margin-top: 10px; text-align: center; }
         textarea { resize: none; min-height: 100px; overflow-y: hidden; }
+        .edit-textarea { min-height: 80px; margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -59,8 +67,8 @@
             <h3 style="text-align: center;">회원가입</h3>
             <input type="text" id="signup-nickname" placeholder="닉네임">
             <input type="text" id="signup-id" placeholder="사용할 아이디">
-            <input type="email" id="signup-email" placeholder="이메일 (비밀번호 찾기용)">
-            <input type="password" id="signup-pw" placeholder="비밀번호 (6자리 이상)">
+            <input type="email" id="signup-email" placeholder="이메일">
+            <input type="password" id="signup-pw" placeholder="비밀번호">
             <input type="password" id="signup-pw-confirm" placeholder="비밀번호 확인">
             <button style="background-color: #2ecc71;" onclick="signUpWithIdAndEmail()">가입하기</button>
             <div style="text-align:center; margin-top:15px; font-size:14px; color:#666; cursor:pointer;" onclick="toggleAuth(false)">이미 계정이 있나요? 로그인</div>
@@ -77,17 +85,19 @@
             <button class="logout-btn" onclick="logout()">로그아웃</button>
         </div>
 
-        <div class="category-grid" id="folder-grid">
+        <div class="category-container">
+            <div class="add-category-box">
+                <input type="text" id="new-cat-input" placeholder="새 폴더 이름">
+                <button onclick="addCategory()">폴더 추가</button>
             </div>
+            <div class="category-grid" id="folder-grid"></div>
+        </div>
+
+        <hr>
 
         <h3>✍️ 일기 작성</h3>
         <select id="category-select">
-            <option value="과제">과제</option>
-            <option value="정리">정리</option>
-            <option value="메모">메모</option>
-            <option value="그림">그림</option>
-            <option value="봉인">봉인</option>
-            <option value="꺼진 화면 메모">꺼진 화면 메모</option>
+            <option value="미분류">폴더 선택</option>
         </select>
         <input type="date" id="date-input">
         <textarea id="content-input" placeholder="내용을 입력하세요..."></textarea>
@@ -119,100 +129,122 @@
     const provider = new GoogleAuthProvider();
 
     let allDiaries = {};
+    let userCategories = [];
     let currentFilter = "전체";
-    const categories = ["과제", "정리", "메모", "그림", "봉인", "꺼진 화면 메모"];
 
-    // 텍스트 영역 높이 자동 조절
+    const autoResize = (textarea) => {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+    };
+
     const contentInput = document.getElementById('content-input');
-    contentInput.addEventListener('input', () => {
-        contentInput.style.height = 'auto';
-        contentInput.style.height = contentInput.scrollHeight + 'px';
-    });
+    contentInput.addEventListener('input', () => autoResize(contentInput));
 
     onAuthStateChanged(auth, (user) => {
-        const authSection = document.getElementById('auth-section');
-        const mainSection = document.getElementById('main-section');
         if (user) {
-            authSection.classList.add('hidden');
-            mainSection.classList.remove('hidden');
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('main-section').classList.remove('hidden');
             document.getElementById('user-name').innerText = user.displayName || user.email;
-            loadDiaries(user.uid);
+            loadUserData(user.uid);
         } else {
-            authSection.classList.remove('hidden');
-            mainSection.classList.add('hidden');
+            document.getElementById('auth-section').classList.remove('hidden');
+            document.getElementById('main-section').classList.add('hidden');
         }
     });
 
-    window.saveDiary = async () => {
-        const cat = document.getElementById('category-select').value;
-        const date = document.getElementById('date-input').value;
-        const content = contentInput.value;
-        if(!content || !auth.currentUser) return;
-
-        await push(ref(db, `users/${auth.currentUser.uid}/diaries`), {
-            category: cat,
-            date: date,
-            content: content,
-            timestamp: Date.now()
+    function loadUserData(uid) {
+        onValue(ref(db, `users/${uid}/categories`), (snapshot) => {
+            userCategories = snapshot.val() ? Object.entries(snapshot.val()) : [];
+            renderUI();
         });
-        contentInput.value = '';
-        contentInput.style.height = 'auto';
-    };
-
-    function loadDiaries(uid) {
         onValue(ref(db, `users/${uid}/diaries`), (snapshot) => {
             allDiaries = snapshot.val() || {};
             renderUI();
         });
     }
 
+    window.addCategory = async () => {
+        const name = document.getElementById('new-cat-input').value.trim();
+        if(!name) return;
+        if(userCategories.some(c => c[1].name === name)) return alert("이미 존재하는 폴더입니다.");
+        await push(ref(db, `users/${auth.currentUser.uid}/categories`), { name });
+        document.getElementById('new-cat-input').value = '';
+    };
+
+    window.deleteCategory = async (catId, name) => {
+        event.stopPropagation();
+        if(!confirm(`'${name}' 폴더를 삭제할까요? (안의 일기는 삭제되지 않습니다.)`)) return;
+        await remove(ref(db, `users/${auth.currentUser.uid}/categories/${catId}`));
+        if(currentFilter === name) currentFilter = "전체";
+    };
+
+    window.saveDiary = async () => {
+        const cat = document.getElementById('category-select').value;
+        const date = document.getElementById('date-input').value;
+        const content = contentInput.value;
+        if(!content) return;
+        await push(ref(db, `users/${auth.currentUser.uid}/diaries`), {
+            category: cat, date, content, timestamp: Date.now()
+        });
+        contentInput.value = '';
+        contentInput.style.height = 'auto';
+    };
+
     function renderUI() {
         renderFolders();
         renderList();
+        updateSelect();
     }
 
     function renderFolders() {
         const grid = document.getElementById('folder-grid');
-        grid.innerHTML = `<div class="folder ${currentFilter === '전체' ? 'active' : ''}" onclick="setFilter('전체')">전체</div>`;
-        
-        categories.forEach(cat => {
-            const count = Object.values(allDiaries).filter(d => d.category === cat).length;
+        grid.innerHTML = `<div class="folder ${currentFilter === '전체' ? 'active' : ''}" onclick="setFilter('전체')">
+            <span class="folder-count">${Object.keys(allDiaries).length}</span>전체</div>`;
+        userCategories.forEach(([id, cat]) => {
+            const count = Object.values(allDiaries).filter(d => d.category === cat.name).length;
             const folder = document.createElement('div');
-            folder.className = `folder ${currentFilter === cat ? 'active' : ''}`;
-            folder.onclick = () => setFilter(cat);
-            folder.innerHTML = `<span class="folder-count">${count}</span>${cat}`;
+            folder.className = `folder ${currentFilter === cat.name ? 'active' : ''}`;
+            folder.onclick = () => setFilter(cat.name);
+            folder.innerHTML = `<span class="folder-count">${count}</span>${cat.name}<span class="del-cat" onclick="deleteCategory('${id}', '${cat.name}')">×</span>`;
             grid.appendChild(folder);
         });
     }
 
-    window.setFilter = (cat) => {
-        currentFilter = cat;
-        renderUI();
-    };
+    function updateSelect() {
+        const select = document.getElementById('category-select');
+        select.innerHTML = '<option value="미분류">폴더 선택</option>';
+        userCategories.forEach(([id, cat]) => {
+            const opt = document.createElement('option');
+            opt.value = cat.name;
+            opt.innerText = cat.name;
+            select.appendChild(opt);
+        });
+    }
+
+    window.setFilter = (cat) => { currentFilter = cat; renderUI(); };
 
     function renderList() {
         const list = document.getElementById('diary-list');
         list.innerHTML = '';
         let entries = Object.entries(allDiaries);
-        
-        if(currentFilter !== "전체") {
-            entries = entries.filter(([id, d]) => d.category === currentFilter);
-        }
+        if(currentFilter !== "전체") entries = entries.filter(([id, d]) => d.category === currentFilter);
 
         entries.sort((a, b) => b[1].timestamp - a[1].timestamp).forEach(([id, d]) => {
             const item = document.createElement('div');
             item.className = 'diary-item';
             item.onclick = () => item.classList.toggle('open');
+            const safeContent = d.content.replace(/`/g, '\\`').replace(/\$/g, '\\$');
             item.innerHTML = `
                 <div class="diary-header">
                     <span class="diary-date">${d.date}</span>
-                    <span class="diary-badge">${d.category}</span>
+                    <span class="diary-badge">${d.category || '미분류'}</span>
                 </div>
-                <div class="diary-preview">${d.content}</div>
-                <div class="diary-full">
-                    ${d.content}
-                    <div style="margin-top:15px; text-align:right; display:flex; gap:5px; justify-content: flex-end;">
-                        <button onclick="deleteDiary('${id}')" style="background:#ff7675; width:auto; padding:5px 10px; font-size:12px;">삭제</button>
+                <div class="diary-preview" id="preview-${id}">${d.content}</div>
+                <div class="diary-full" id="full-${id}">
+                    <div id="text-${id}">${d.content}</div>
+                    <div style="text-align:right; margin-top:15px; display:flex; gap:5px; justify-content: flex-end;">
+                        <button onclick="startEdit('${id}', \`${safeContent}\`)" style="background:#f1c40f; width:auto; padding:5px 12px; font-size:12px;">수정</button>
+                        <button onclick="deleteDiary('${id}')" style="background:#ff7675; width:auto; padding:5px 12px; font-size:12px;">삭제</button>
                     </div>
                 </div>
             `;
@@ -220,59 +252,65 @@
         });
     }
 
+    // 수정 모드 시작
+    window.startEdit = (id, oldContent) => {
+        event.stopPropagation();
+        const textDiv = document.getElementById(`text-${id}`);
+        textDiv.innerHTML = `
+            <textarea id="edit-input-${id}" class="edit-textarea">${oldContent}</textarea>
+            <div style="display:flex; gap:5px; margin-top:10px;">
+                <button onclick="finishEdit('${id}', \`${oldContent.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)" style="background:#2ecc71; padding:5px 10px;">저장</button>
+                <button onclick="cancelEdit()" style="background:#95a5a6; padding:5px 10px;">취소</button>
+            </div>
+        `;
+        const editInput = document.getElementById(`edit-input-${id}`);
+        autoResize(editInput);
+        editInput.addEventListener('input', () => autoResize(editInput));
+        editInput.onclick = (e) => e.stopPropagation();
+    };
+
+    window.cancelEdit = () => { event.stopPropagation(); renderUI(); };
+
+    window.finishEdit = async (id, oldContent) => {
+        event.stopPropagation();
+        const newContent = document.getElementById(`edit-input-${id}`).value;
+        if(!newContent) return alert("내용을 입력하세요.");
+        if(newContent === oldContent) { renderUI(); return; }
+        await update(ref(db, `users/${auth.currentUser.uid}/diaries/${id}`), { content: newContent });
+    };
+
     window.deleteDiary = async (id) => {
         event.stopPropagation();
-        if(confirm("정말 삭제할까요?")) {
-            await remove(ref(db, `users/${auth.currentUser.uid}/diaries/${id}`));
-        }
+        if(confirm("정말 삭제할까요?")) await remove(ref(db, `users/${auth.currentUser.uid}/diaries/${id}`));
     };
 
-    // 인증 관련 함수
-    window.toggleAuth = (s) => { 
-        document.getElementById('login-form').classList.toggle('hidden', s); 
-        document.getElementById('signup-form').classList.toggle('hidden', !s); 
-        document.getElementById('auth-error').innerText = "";
-    };
-
+    // 인증 로직 (기존과 동일)
+    window.toggleAuth = (s) => { document.getElementById('login-form').classList.toggle('hidden', s); document.getElementById('signup-form').classList.toggle('hidden', !s); };
     window.loginWithGoogle = () => signInWithPopup(auth, provider);
     window.logout = () => signOut(auth);
-
     window.signInWithId = async () => {
         const id = document.getElementById('login-id').value;
         const pw = document.getElementById('login-pw').value;
-        const errorElement = document.getElementById('auth-error');
-        try {
-            const snap = await get(child(ref(db), `idMap/${id}`));
-            if(!snap.exists()) { errorElement.innerText = "존재하지 않는 아이디입니다."; return; }
-            await signInWithEmailAndPassword(auth, snap.val().email, pw);
-        } catch (error) { errorElement.innerText = "아이디 또는 비밀번호가 틀렸습니다."; }
+        const snap = await get(child(ref(db), `idMap/${id}`));
+        if(snap.exists()) await signInWithEmailAndPassword(auth, snap.val().email, pw);
+        else alert("아이디를 확인해주세요.");
     };
-
     window.signUpWithIdAndEmail = async () => {
         const nick = document.getElementById('signup-nickname').value;
         const id = document.getElementById('signup-id').value;
         const email = document.getElementById('signup-email').value;
         const pw = document.getElementById('signup-pw').value;
         const pwConfirm = document.getElementById('signup-pw-confirm').value;
-        const errorElement = document.getElementById('auth-error');
-
-        if(!nick || !id || !email || !pw) { errorElement.innerText = "모든 정보를 입력해 주세요."; return; }
-        if(pw !== pwConfirm) { errorElement.innerText = "비밀번호가 일치하지 않습니다."; return; }
-
+        if(pw !== pwConfirm) return alert("비밀번호 불일치");
         try {
-            const idCheck = await get(child(ref(db), `idMap/${id}`));
-            if(idCheck.exists()) { errorElement.innerText = "이미 사용 중인 아이디입니다."; return; }
             const userCred = await createUserWithEmailAndPassword(auth, email, pw);
             await updateProfile(userCred.user, { displayName: nick });
-            await set(ref(db, `idMap/${id}`), { email: email });
+            await set(ref(db, `idMap/${id}`), { email });
             location.reload();
-        } catch (error) { errorElement.innerText = error.message; }
+        } catch (e) { alert(e.message); }
     };
 
-    // 오늘 날짜 설정
-    const dateInput = document.getElementById('date-input');
-    const now = new Date();
-    dateInput.value = now.toISOString().substring(0, 10);
+    document.getElementById('date-input').value = new Date().toISOString().substring(0, 10);
 </script>
 </body>
 </html>

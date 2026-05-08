@@ -30,9 +30,11 @@
         
         .diary-item { border-bottom: 1px solid #eee; padding: 15px 0; cursor: pointer; }
         .diary-item:hover { background: #fafafa; }
-        .diary-header { display: flex; justify-content: space-between; align-items: center; }
+        .diary-header { display: flex; flex-direction: column; gap: 4px; }
+        .diary-top-row { display: flex; justify-content: space-between; align-items: center; }
+        .diary-title-row { font-size: 16px; font-weight: bold; color: #333; margin-top: 2px; }
         .diary-badge { background: #eee; padding: 2px 8px; border-radius: 10px; font-size: 11px; color: #666; }
-        .diary-date { font-weight: bold; font-size: 14px; color: var(--primary-color); }
+        .diary-date { font-weight: bold; font-size: 13px; color: var(--primary-color); }
         
         .diary-preview { color: #666; font-size: 14px; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
         .diary-full { display: none; white-space: pre-wrap; line-height: 1.6; margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 8px; }
@@ -41,9 +43,9 @@
         
         .user-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px; background: #eee; border-radius: 8px; }
         .logout-btn { background-color: #e74c3c; width: auto; padding: 5px 10px; font-size: 12px; }
-        #auth-error { color: #e74c3c; font-size: 13px; margin-top: 10px; text-align: center; }
         textarea { resize: none; min-height: 100px; overflow-y: hidden; }
         .edit-textarea { min-height: 80px; margin-bottom: 10px; margin-top: 10px; }
+        .edit-input-title { margin-bottom: 5px; font-weight: bold; }
         .edit-select { margin-top: 0; padding: 8px; font-size: 13px; }
     </style>
 </head>
@@ -64,13 +66,13 @@
             <h3 style="text-align: center;">회원가입</h3>
             <input type="text" id="signup-nickname" placeholder="닉네임">
             <input type="text" id="signup-id" placeholder="사용할 아이디">
-            <input type="email" id="signup-email" placeholder="이메일 (비밀번호 재설정용)">
+            <input type="email" id="signup-email" placeholder="이메일">
             <input type="password" id="signup-pw" placeholder="비밀번호">
             <input type="password" id="signup-pw-confirm" placeholder="비밀번호 확인">
             <button style="background-color: #2ecc71;" onclick="signUpWithIdAndEmail()">가입하기</button>
             <div style="text-align:center; margin-top:15px; font-size:14px; color:#666; cursor:pointer;" onclick="toggleAuth(false)">이미 계정이 있나요? 로그인</div>
         </div>
-        <p id="auth-error"></p>
+        <p id="auth-error" style="color:red; text-align:center;"></p>
         <div style="text-align: center; margin: 15px 0; color: #888;">또는</div>
         <button class="google-btn" onclick="loginWithGoogle()">구글로 계속하기</button>
     </div>
@@ -91,6 +93,7 @@
         <h3>✍️ 일기 작성</h3>
         <select id="category-select"><option value="미분류">폴더 선택</option></select>
         <input type="date" id="date-input">
+        <input type="text" id="title-input" placeholder="일기 제목 (없으면 '제목없음')">
         <textarea id="content-input" placeholder="내용을 입력하세요..."></textarea>
         <button id="save-btn" onclick="saveDiary()">기록하기</button>
         <hr style="margin: 30px 0; border: 0.5px solid #eee;">
@@ -124,8 +127,10 @@
 
     const autoResize = (textarea) => {
         if (!textarea) return;
+        const scrollPos = window.pageYOffset || document.documentElement.scrollTop;
         textarea.style.height = 'auto';
         textarea.style.height = textarea.scrollHeight + 'px';
+        window.scrollTo(0, scrollPos);
     };
 
     onAuthStateChanged(auth, (user) => {
@@ -134,7 +139,7 @@
             document.getElementById('main-section').classList.remove('hidden');
             document.getElementById('user-name').innerText = user.displayName || user.email;
             loadUserData(user.uid);
-            setCurrentDate(); // 로그인 시 날짜 초기화
+            setCurrentDate();
         } else {
             document.getElementById('auth-section').classList.remove('hidden');
             document.getElementById('main-section').classList.add('hidden');
@@ -142,9 +147,10 @@
     });
 
     function setCurrentDate() {
-        const offset = new Date().getTimezoneOffset() * 60000;
-        const today = new Date(Date.now() - offset).toISOString().split('T')[0];
-        document.getElementById('date-input').value = today;
+        const now = new Date();
+        const kstOffset = 9 * 60 * 60 * 1000;
+        const kstDate = new Date(now.getTime() + kstOffset);
+        document.getElementById('date-input').value = kstDate.toISOString().split('T')[0];
     }
 
     function loadUserData(uid) {
@@ -176,11 +182,14 @@
     window.saveDiary = async () => {
         const cat = document.getElementById('category-select').value;
         const date = document.getElementById('date-input').value;
+        const title = document.getElementById('title-input').value.trim() || "제목없음";
         const content = document.getElementById('content-input').value;
         if(!content) return;
+        
         await push(ref(db, `users/${auth.currentUser.uid}/diaries`), {
-            category: cat, date: date, content: content, timestamp: Date.now()
+            category: cat, date: date, title: title, content: content, timestamp: Date.now()
         });
+        document.getElementById('title-input').value = '';
         document.getElementById('content-input').value = '';
         document.getElementById('content-input').style.height = 'auto';
     };
@@ -229,34 +238,37 @@
             const item = document.createElement('div');
             item.className = 'diary-item';
             item.id = `item-${id}`;
-            item.onclick = (e) => { if(!e.currentTarget.classList.contains('editing')) e.currentTarget.classList.toggle('open'); };
+            item.onclick = (e) => { if(!item.classList.contains('editing')) item.classList.toggle('open'); };
             
             const currentCat = d.category || '미분류';
+            const displayTitle = d.title || "제목없음";
+            
             item.innerHTML = `
                 <div class="diary-header">
-                    <span class="diary-date">${d.date}</span>
-                    <span class="diary-badge">${currentCat}</span>
+                    <div class="diary-top-row">
+                        <span class="diary-date">${d.date}</span>
+                        <span class="diary-badge">${currentCat}</span>
+                    </div>
+                    <div class="diary-title-row">${displayTitle}</div>
                 </div>
                 <div class="diary-preview">${d.content}</div>
                 <div class="diary-full" id="full-view-${id}">
                     <div id="text-display-${id}">${d.content}</div>
                     <div style="text-align:right; margin-top:15px; display:flex; gap:5px; justify-content: flex-end;">
-                        <button class="edit-btn" data-id="${id}" style="background:#f1c40f; width:auto; padding:5px 12px; font-size:12px;">수정</button>
+                        <button class="edit-btn" style="background:#f1c40f; width:auto; padding:5px 12px; font-size:12px;">수정</button>
                         <button onclick="deleteDiary('${id}')" style="background:#ff7675; width:auto; padding:5px 12px; font-size:12px;">삭제</button>
                     </div>
                 </div>
             `;
             list.appendChild(item);
-            
-            // 수정 버튼 이벤트 리스너 (propagation 방지 포함)
-            item.querySelector('.edit-btn').addEventListener('click', (e) => {
+            item.querySelector('.edit-btn').onclick = (e) => {
                 e.stopPropagation();
-                startEdit(id, d.content, currentCat);
-            });
+                startEdit(id, d.title || "", d.content, currentCat);
+            };
         });
     }
 
-    function startEdit(id, oldContent, oldCat) {
+    function startEdit(id, oldTitle, oldContent, oldCat) {
         const item = document.getElementById(`item-${id}`);
         item.classList.add('editing');
         const display = document.getElementById(`text-display-${id}`);
@@ -268,6 +280,7 @@
 
         display.innerHTML = `
             <select id="edit-cat-${id}" class="edit-select" onclick="event.stopPropagation()">${catOptions}</select>
+            <input type="text" id="edit-title-${id}" class="edit-input-title" value="${oldTitle}" placeholder="일기 제목" onclick="event.stopPropagation()">
             <textarea id="edit-input-${id}" class="edit-textarea" onclick="event.stopPropagation()">${oldContent}</textarea>
             <div style="display:flex; gap:5px;" onclick="event.stopPropagation()">
                 <button id="save-edit-${id}" style="background:#2ecc71; padding:5px 15px;">저장</button>
@@ -279,18 +292,20 @@
         autoResize(textarea);
         textarea.addEventListener('input', () => autoResize(textarea));
 
-        document.getElementById(`save-edit-${id}`).onclick = () => finishEdit(id, oldContent, oldCat);
+        document.getElementById(`save-edit-${id}`).onclick = () => finishEdit(id, oldTitle, oldContent, oldCat);
         document.getElementById(`cancel-edit-${id}`).onclick = () => { item.classList.remove('editing'); renderUI(); };
     }
 
-    async function finishEdit(id, oldContent, oldCat) {
+    async function finishEdit(id, oldTitle, oldContent, oldCat) {
+        const newTitle = document.getElementById(`edit-title-${id}`).value.trim() || "제목없음";
         const newContent = document.getElementById(`edit-input-${id}`).value;
         const newCat = document.getElementById(`edit-cat-${id}`).value;
+        
         if(!newContent) return alert("내용을 입력하세요.");
         
-        if(newContent !== oldContent || newCat !== oldCat) {
+        if(newTitle !== oldTitle || newContent !== oldContent || newCat !== oldCat) {
             await update(ref(db, `users/${auth.currentUser.uid}/diaries/${id}`), { 
-                content: newContent, category: newCat 
+                title: newTitle, content: newContent, category: newCat 
             });
         }
         document.getElementById(`item-${id}`).classList.remove('editing');
@@ -302,7 +317,6 @@
         if(confirm("정말 삭제할까요?")) await remove(ref(db, `users/${auth.currentUser.uid}/diaries/${id}`));
     };
 
-    // 인증/높이조절 기본 세팅
     document.getElementById('content-input').addEventListener('input', (e) => autoResize(e.target));
     window.toggleAuth = (s) => { document.getElementById('login-form').classList.toggle('hidden', s); document.getElementById('signup-form').classList.toggle('hidden', !s); };
     window.loginWithGoogle = () => signInWithPopup(auth, provider);
@@ -310,9 +324,11 @@
     window.signInWithId = async () => {
         const id = document.getElementById('login-id').value;
         const pw = document.getElementById('login-pw').value;
-        const snap = await get(child(ref(db), `idMap/${id}`));
-        if(snap.exists()) await signInWithEmailAndPassword(auth, snap.val().email, pw);
-        else alert("아이디를 확인해주세요.");
+        try {
+            const snap = await get(child(ref(db), `idMap/${id}`));
+            if(snap.exists()) await signInWithEmailAndPassword(auth, snap.val().email, pw);
+            else alert("아이디를 확인해주세요.");
+        } catch (e) { alert("로그인 실패"); }
     };
     window.signUpWithIdAndEmail = async () => {
         const nick = document.getElementById('signup-nickname').value;

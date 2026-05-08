@@ -46,7 +46,8 @@
         .logout-btn { background-color: #e74c3c; width: auto; padding: 5px 10px; font-size: 12px; }
         #auth-error { color: #e74c3c; font-size: 13px; margin-top: 10px; text-align: center; }
         textarea { resize: none; min-height: 100px; overflow-y: hidden; }
-        .edit-textarea { min-height: 80px; margin-bottom: 10px; }
+        .edit-textarea { min-height: 80px; margin-bottom: 10px; margin-top: 10px; }
+        .edit-select { margin-top: 0; padding: 8px; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -183,8 +184,12 @@
         const date = document.getElementById('date-input').value;
         const content = contentInput.value;
         if(!content) return;
+
         await push(ref(db, `users/${auth.currentUser.uid}/diaries`), {
-            category: cat, date, content, timestamp: Date.now()
+            category: cat,
+            date: date,
+            content: content,
+            timestamp: Date.now()
         });
         contentInput.value = '';
         contentInput.style.height = 'auto';
@@ -200,12 +205,17 @@
         const grid = document.getElementById('folder-grid');
         grid.innerHTML = `<div class="folder ${currentFilter === '전체' ? 'active' : ''}" onclick="setFilter('전체')">
             <span class="folder-count">${Object.keys(allDiaries).length}</span>전체</div>`;
+        
         userCategories.forEach(([id, cat]) => {
             const count = Object.values(allDiaries).filter(d => d.category === cat.name).length;
             const folder = document.createElement('div');
             folder.className = `folder ${currentFilter === cat.name ? 'active' : ''}`;
             folder.onclick = () => setFilter(cat.name);
-            folder.innerHTML = `<span class="folder-count">${count}</span>${cat.name}<span class="del-cat" onclick="deleteCategory('${id}', '${cat.name}')">×</span>`;
+            folder.innerHTML = `
+                <span class="folder-count">${count}</span>
+                ${cat.name}
+                <span class="del-cat" onclick="deleteCategory('${id}', '${cat.name}')">×</span>
+            `;
             grid.appendChild(folder);
         });
     }
@@ -234,17 +244,21 @@
             item.className = 'diary-item';
             item.onclick = () => item.classList.toggle('open');
             const safeContent = d.content.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+            const currentCat = d.category || '미분류';
+            
             item.innerHTML = `
                 <div class="diary-header">
                     <span class="diary-date">${d.date}</span>
-                    <span class="diary-badge">${d.category || '미분류'}</span>
+                    <span class="diary-badge">${currentCat}</span>
                 </div>
-                <div class="diary-preview" id="preview-${id}">${d.content}</div>
-                <div class="diary-full" id="full-${id}">
-                    <div id="text-${id}">${d.content}</div>
-                    <div style="text-align:right; margin-top:15px; display:flex; gap:5px; justify-content: flex-end;">
-                        <button onclick="startEdit('${id}', \`${safeContent}\`)" style="background:#f1c40f; width:auto; padding:5px 12px; font-size:12px;">수정</button>
-                        <button onclick="deleteDiary('${id}')" style="background:#ff7675; width:auto; padding:5px 12px; font-size:12px;">삭제</button>
+                <div class="diary-preview">${d.content}</div>
+                <div class="diary-full">
+                    <div id="text-container-${id}">
+                        <div>${d.content}</div>
+                        <div style="text-align:right; margin-top:15px; display:flex; gap:5px; justify-content: flex-end;">
+                            <button onclick="startEdit('${id}', \`${safeContent}\`, '${currentCat}')" style="background:#f1c40f; width:auto; padding:5px 12px; font-size:12px;">수정</button>
+                            <button onclick="deleteDiary('${id}')" style="background:#ff7675; width:auto; padding:5px 12px; font-size:12px;">삭제</button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -253,30 +267,53 @@
     }
 
     // 수정 모드 시작
-    window.startEdit = (id, oldContent) => {
+    window.startEdit = (id, oldContent, oldCat) => {
         event.stopPropagation();
-        const textDiv = document.getElementById(`text-${id}`);
-        textDiv.innerHTML = `
+        const container = document.getElementById(`text-container-${id}`);
+        
+        // 카테고리 선택 옵션 생성
+        let catOptions = `<option value="미분류" ${oldCat === '미분류' ? 'selected' : ''}>미분류</option>`;
+        userCategories.forEach(([cid, cat]) => {
+            catOptions += `<option value="${cat.name}" ${oldCat === cat.name ? 'selected' : ''}>${cat.name}</option>`;
+        });
+
+        container.innerHTML = `
+            <select id="edit-cat-${id}" class="edit-select">${catOptions}</select>
             <textarea id="edit-input-${id}" class="edit-textarea">${oldContent}</textarea>
-            <div style="display:flex; gap:5px; margin-top:10px;">
-                <button onclick="finishEdit('${id}', \`${oldContent.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)" style="background:#2ecc71; padding:5px 10px;">저장</button>
-                <button onclick="cancelEdit()" style="background:#95a5a6; padding:5px 10px;">취소</button>
+            <div style="display:flex; gap:5px;">
+                <button onclick="finishEdit('${id}', \`${oldContent.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`, '${oldCat}')" style="background:#2ecc71; padding:5px 15px;">저장</button>
+                <button onclick="cancelEdit()" style="background:#95a5a6; padding:5px 15px;">취소</button>
             </div>
         `;
+        
         const editInput = document.getElementById(`edit-input-${id}`);
         autoResize(editInput);
         editInput.addEventListener('input', () => autoResize(editInput));
-        editInput.onclick = (e) => e.stopPropagation();
+        // 수정 창 안에서의 클릭이 부모로 전파되어 창이 닫히는 것 방지
+        container.querySelectorAll('textarea, select, button').forEach(el => {
+            el.onclick = (e) => e.stopPropagation();
+        });
     };
 
     window.cancelEdit = () => { event.stopPropagation(); renderUI(); };
 
-    window.finishEdit = async (id, oldContent) => {
+    window.finishEdit = async (id, oldContent, oldCat) => {
         event.stopPropagation();
         const newContent = document.getElementById(`edit-input-${id}`).value;
+        const newCat = document.getElementById(`edit-cat-${id}`).value;
+        
         if(!newContent) return alert("내용을 입력하세요.");
-        if(newContent === oldContent) { renderUI(); return; }
-        await update(ref(db, `users/${auth.currentUser.uid}/diaries/${id}`), { content: newContent });
+        
+        // 변경 사항이 있는 경우만 업데이트
+        if(newContent === oldContent && newCat === oldCat) {
+            renderUI();
+            return;
+        }
+
+        await update(ref(db, `users/${auth.currentUser.uid}/diaries/${id}`), { 
+            content: newContent,
+            category: newCat
+        });
     };
 
     window.deleteDiary = async (id) => {
@@ -285,7 +322,10 @@
     };
 
     // 인증 로직 (기존과 동일)
-    window.toggleAuth = (s) => { document.getElementById('login-form').classList.toggle('hidden', s); document.getElementById('signup-form').classList.toggle('hidden', !s); };
+    window.toggleAuth = (s) => { 
+        document.getElementById('login-form').classList.toggle('hidden', s); 
+        document.getElementById('signup-form').classList.toggle('hidden', !s); 
+    };
     window.loginWithGoogle = () => signInWithPopup(auth, provider);
     window.logout = () => signOut(auth);
     window.signInWithId = async () => {

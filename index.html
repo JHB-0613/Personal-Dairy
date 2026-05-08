@@ -15,6 +15,7 @@
         .logout-btn { background-color: #e74c3c; width: auto; padding: 5px 10px; font-size: 12px; }
         .diary-item { border: 1px solid #eee; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
         .diary-date { font-weight: bold; color: var(--primary-color); }
+        .diary-content { white-space: pre-wrap; line-height: 1.6; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -22,13 +23,26 @@
 <div class="container">
     <h1>🔒 비밀 일기장</h1>
 
-    <!-- 1. 로그인 화면 -->
     <div id="auth-section">
-        <p style="text-align: center;">일기를 쓰려면 로그인이 필요합니다.</p>
-        <button onclick="login()">구글로 로그인하기</button>
+        <p style="text-align: center;">나만의 비밀 일기장</p>
+        
+        <div style="margin-bottom: 20px;">
+            <input type="text" id="nickname-input" placeholder="사용할 닉네임 (회원가입 시)">
+            <input type="email" id="email-input" placeholder="이메일 주소">
+            <input type="password" id="password-input" placeholder="비밀번호 (6자리 이상)">
+            
+            <p id="auth-error" style="color: #e74c3c; font-size: 13px; margin-top: 10px; text-align: center; min-height: 18px;"></p>
+
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button onclick="signInEmail()">로그인</button>
+                <button onclick="signUpEmail()" style="background-color: #2ecc71;">회원가입</button>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin: 10px 0; color: #888;">또는</div>
+        <button onclick="login()" style="background-color: #df4a32;">구글로 계속하기</button>
     </div>
 
-    <!-- 2. 일기 작성 및 목록 화면 (로그인 전엔 숨김) -->
     <div id="main-section" class="hidden">
         <div class="user-info">
             <span id="user-name"></span>님 환영합니다!
@@ -46,17 +60,26 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-    import { getDatabase, ref, push, onValue, query, orderByChild } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    import { 
+        getAuth, 
+        signInWithPopup, 
+        GoogleAuthProvider, 
+        onAuthStateChanged, 
+        signOut,
+        createUserWithEmailAndPassword,
+        signInWithEmailAndPassword,
+        updateProfile 
+    } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getDatabase, ref, push, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
     const firebaseConfig = {
-    apiKey: "AIzaSyCTChi4-r43pV9MkgXat6WJjyWqJaElMIM",
-    authDomain: "personal-dairy-ec00f.firebaseapp.com",
-    databaseURL: "https://personal-dairy-ec00f-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "personal-dairy-ec00f",
-    storageBucket: "personal-dairy-ec00f.firebasestorage.app",
-    messagingSenderId: "261757215946",
-    appId: "1:261757215946:web:d1af5573d78b2470450033"
+        apiKey: "AIzaSyCTChi4-r43pV9MkgXat6WJjyWqJaElMIM",
+        authDomain: "personal-dairy-ec00f.firebaseapp.com",
+        databaseURL: "https://personal-dairy-ec00f-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "personal-dairy-ec00f",
+        storageBucket: "personal-dairy-ec00f.firebasestorage.app",
+        messagingSenderId: "261757215946",
+        appId: "1:261757215946:web:d1af5573d78b2470450033"
     };
 
     const app = initializeApp(firebaseConfig);
@@ -66,14 +89,13 @@
 
     let currentUser = null;
 
-    // [인증 상태 감시] 로그인 상태가 변하면 실행됨
     onAuthStateChanged(auth, (user) => {
         if (user) {
             currentUser = user;
             document.getElementById('auth-section').classList.add('hidden');
             document.getElementById('main-section').classList.remove('hidden');
-            document.getElementById('user-name').innerText = user.displayName;
-            loadDiaries(user.uid); // 로그인한 사용자의 UID로 일기 로드
+            document.getElementById('user-name').innerText = user.displayName || user.email;
+            loadDiaries(user.uid);
         } else {
             currentUser = null;
             document.getElementById('auth-section').classList.remove('hidden');
@@ -81,25 +103,66 @@
         }
     });
 
-    // 로그인 함수
-    window.login = () => signInWithPopup(auth, provider).catch(console.error);
+    function getFriendlyErrorMessage(errorCode) {
+        switch (errorCode) {
+            case 'auth/email-already-in-use': return '이미 가입된 이메일 주소입니다.';
+            case 'auth/invalid-email': return '유효하지 않은 이메일 형식입니다.';
+            case 'auth/weak-password': return '비밀번호를 6자리 이상으로 설정해 주세요.';
+            case 'auth/user-not-found':
+            case 'auth/wrong-password':
+            case 'auth/invalid-credential': return '이메일 또는 비밀번호가 일치하지 않습니다.';
+            default: return '오류가 발생했습니다. 다시 시도해 주세요.';
+        }
+    }
 
-    // 로그아웃 함수
+    window.signUpEmail = () => {
+        const nickname = document.getElementById('nickname-input').value;
+        const email = document.getElementById('email-input').value;
+        const password = document.getElementById('password-input').value;
+        const errorElement = document.getElementById('auth-error');
+
+        if (!nickname) { errorElement.innerText = "사용하실 닉네임을 입력해 주세요."; return; }
+
+        createUserWithEmailAndPassword(auth, email, password)
+            .then((userCredential) => {
+                updateProfile(userCredential.user, { displayName: nickname })
+                .then(() => {
+                    alert(`${nickname}님, 환영합니다!`);
+                    location.reload();
+                });
+            })
+            .catch((error) => {
+                errorElement.innerText = getFriendlyErrorMessage(error.code);
+            });
+    };
+
+    window.signInEmail = () => {
+        const email = document.getElementById('email-input').value;
+        const password = document.getElementById('password-input').value;
+        const errorElement = document.getElementById('auth-error');
+
+        signInWithEmailAndPassword(auth, email, password)
+            .then(() => { errorElement.innerText = ""; })
+            .catch((error) => {
+                errorElement.innerText = getFriendlyErrorMessage(error.code);
+            });
+    };
+
+    window.login = () => signInWithPopup(auth, provider).catch(console.error);
     window.logout = () => signOut(auth);
 
-    // 저장 함수
     window.saveDiary = () => {
         const date = document.getElementById('date-input').value;
         const content = document.getElementById('content-input').value;
         if (!content || !currentUser) return;
 
-        // 경로를 users/사용자UID/diaries 로 설정하여 개인 공간 확보
         const userDiaryRef = ref(db, `users/${currentUser.uid}/diaries`);
         push(userDiaryRef, { date, content, timestamp: Date.now() })
-            .then(() => document.getElementById('content-input').value = '');
+            .then(() => {
+                document.getElementById('content-input').value = '';
+            });
     };
 
-    // 불러오기 함수
     function loadDiaries(uid) {
         const userDiaryRef = ref(db, `users/${uid}/diaries`);
         onValue(userDiaryRef, (snapshot) => {
@@ -111,7 +174,10 @@
                 entries.forEach(entry => {
                     const item = document.createElement('div');
                     item.className = 'diary-item';
-                    item.innerHTML = `<div class="diary-date">${entry.date}</div><div>${entry.content}</div>`;
+                    item.innerHTML = `
+                        <div class="diary-date">${entry.date}</div>
+                        <div class="diary-content">${entry.content}</div>
+                    `;
                     listContainer.appendChild(item);
                 });
             }

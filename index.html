@@ -157,18 +157,10 @@
         renderDiaries(allDiaries, document.getElementById('filter-date').value);
     };
 
-    // [개선] 기존 내용(oldContent)과 비교하는 로직 추가
     window.updateDiary = async (diaryId, oldContent) => {
         const newContent = document.getElementById(`edit-input-${diaryId}`).value;
-        
         if (!newContent) return alert("내용을 입력해주세요.");
-
-        // 기존 내용과 바뀐 내용이 같으면 서버 통신 없이 취소 처리
-        if (newContent === oldContent) {
-            cancelEdit();
-            return;
-        }
-        
+        if (newContent === oldContent) { cancelEdit(); return; }
         try {
             await update(ref(db, `users/${auth.currentUser.uid}/diaries/${diaryId}`), { content: newContent });
         } catch (e) { alert("수정 실패"); }
@@ -195,7 +187,6 @@
         entries.sort((a, b) => b[1].timestamp - a[1].timestamp).forEach(([id, entry]) => {
             const item = document.createElement('div');
             item.className = 'diary-item';
-            // 수정 시 역따옴표(`)와 달러 기호($)가 포함된 텍스트 에러를 방지하기 위해 이스케이프 처리
             const safeContent = entry.content.replace(/`/g, '\\`').replace(/\$/g, '\\$');
             item.innerHTML = `
                 <div class="btn-group">
@@ -210,6 +201,7 @@
         });
     }
 
+    // 인증 관련 함수들
     window.toggleAuth = (s) => { document.getElementById('login-form').classList.toggle('hidden', s); document.getElementById('signup-form').classList.toggle('hidden', !s); };
     window.filterDiaries = () => renderDiaries(allDiaries, document.getElementById('filter-date').value);
     window.resetFilter = () => { document.getElementById('filter-date').value = ''; renderDiaries(allDiaries); };
@@ -247,7 +239,18 @@
         const snap = await get(child(ref(db), `idMap/${id}`));
         if (snap.exists()) { await sendPasswordResetEmail(auth, snap.val().email); alert("메일을 보냈습니다."); }
     };
-    document.getElementById('date-input').valueAsDate = new Date();
+
+    // 오늘 날짜 설정 함수
+    function setTodayDate() {
+        const dateInput = document.getElementById('date-input');
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        dateInput.value = `${year}-${month}-${day}`;
+    }
+
+    setTodayDate();
 </script>
 </body>
 </html>

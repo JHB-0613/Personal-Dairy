@@ -58,13 +58,11 @@
             <span id="user-name"></span>님 환영합니다!
             <button class="logout-btn" onclick="logout()">로그아웃</button>
         </div>
-
         <input type="date" id="date-input">
         <div style="margin-top: 10px; font-size: 14px;">📷 사진 추가:</div>
         <input type="file" id="image-input" accept="image/*" style="border: none; padding: 5px 0;">
         <textarea id="content-input" placeholder="오늘의 생각을 기록하세요."></textarea>
         <button id="save-btn" onclick="saveDiary()">기록하기</button>
-
         <hr style="margin: 30px 0; border: 0.5px solid #eee;">
         <div id="diary-list"></div>
     </div>
@@ -110,7 +108,7 @@
         }
     });
 
-    // 회원가입: 아이디-이메일 매핑 정보를 DB에 저장
+    // 회원가입
     window.signUpWithIdAndEmail = async () => {
         const nickname = document.getElementById('signup-nickname').value;
         const id = document.getElementById('signup-id').value;
@@ -123,21 +121,12 @@
         if (password !== passwordConfirm) { errorElement.innerText = "비밀번호가 일치하지 않습니다."; return; }
 
         try {
-            // 1. 아이디 중복 체크
             const idCheck = await get(child(ref(db), `idMap/${id}`));
-            if (idCheck.exists()) {
-                errorElement.innerText = "이미 사용 중인 아이디입니다.";
-                return;
-            }
+            if (idCheck.exists()) { errorElement.innerText = "이미 사용 중인 아이디입니다."; return; }
 
-            // 2. 가입 진행
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            const user = userCredential.user;
-
-            // 3. 닉네임 업데이트 및 DB에 아이디 매핑 저장
-            await updateProfile(user, { displayName: nickname });
+            await updateProfile(userCredential.user, { displayName: nickname });
             await set(ref(db, `idMap/${id}`), { email: email });
-            
             alert("회원가입 성공!");
             location.reload();
         } catch (error) {
@@ -145,48 +134,50 @@
         }
     };
 
-    // 로그인: 입력한 아이디로 이메일을 찾아와서 로그인 진행
+    // 로그인
     window.signInWithId = async () => {
         const id = document.getElementById('login-id').value;
         const password = document.getElementById('login-pw').value;
         const errorElement = document.getElementById('auth-error');
-
         if (!id || !password) { errorElement.innerText = "아이디와 비밀번호를 입력해 주세요."; return; }
 
         try {
             const snapshot = await get(child(ref(db), `idMap/${id}`));
-            if (!snapshot.exists()) {
-                errorElement.innerText = "존재하지 않는 아이디입니다.";
-                return;
-            }
-            const actualEmail = snapshot.val().email;
-            await signInWithEmailAndPassword(auth, actualEmail, password);
+            if (!snapshot.exists()) { errorElement.innerText = "존재하지 않는 아이디입니다."; return; }
+            await signInWithEmailAndPassword(auth, snapshot.val().email, password);
         } catch (error) {
-            errorElement.innerText = "로그인 실패: 아이디 또는 비밀번호를 확인하세요.";
+            errorElement.innerText = "아이디 또는 비밀번호가 틀렸습니다.";
         }
     };
 
-    // 비밀번호 재설정 메일 보내기
+    // [핵심] 비밀번호 재설정 함수
     window.sendResetEmail = async () => {
-        const id = document.getElementById('login-id').value;
-        if (!id) { alert("비밀번호를 찾으려는 아이디를 먼저 입력해 주세요."); return; }
+        // 아이디 입력창을 띄움
+        const id = prompt("비밀번호를 재설정할 아이디를 입력해 주세요.");
+        if (!id) return; // 취소 버튼을 누른 경우
 
         try {
+            // DB에서 해당 아이디와 연결된 이메일을 가져옴
             const snapshot = await get(child(ref(db), `idMap/${id}`));
-            if (!snapshot.exists()) { alert("등록되지 않은 아이디입니다."); return; }
+            
+            if (!snapshot.exists()) {
+                alert("등록되지 않은 아이디입니다.");
+                return;
+            }
 
             const actualEmail = snapshot.val().email;
+            
+            // Firebase 재설정 메일 발송
             await sendPasswordResetEmail(auth, actualEmail);
-            alert(`${actualEmail}로 재설정 메일을 보냈습니다!`);
+            alert(`${id}님의 가입 이메일(${actualEmail})로 재설정 링크를 보냈습니다.\n이메일함을 확인해 주세요!`);
         } catch (error) {
-            alert("메일 전송 실패: " + error.message);
+            alert("오류가 발생했습니다: " + error.message);
         }
     };
 
     window.login = () => signInWithPopup(auth, provider);
     window.logout = () => signOut(auth);
 
-    // 일기 저장 및 불러오기 로직은 이전과 동일하게 유지
     window.saveDiary = async () => {
         const date = document.getElementById('date-input').value;
         const content = document.getElementById('content-input').value;
